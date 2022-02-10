@@ -26,6 +26,8 @@ class pumpThread(threading.Thread):
                 tomorrow = datetime.now() + timedelta(minutes=midnight)
                 if (tomorrow - datetime.now()).total_seconds() > 60:
                     time.sleep(60)
+                else:
+                    self._ranToday = False
             else:
                 pumpTime = (abs((int(self.settings['runTimeH']) - datetime.now().hour)) * 60) + (int(self.settings['runTimeM']) - datetime.now().minute)
                 runPumpAt = datetime.now() + timedelta(minutes=pumpTime)
