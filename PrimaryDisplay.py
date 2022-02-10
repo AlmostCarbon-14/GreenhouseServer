@@ -5,38 +5,26 @@ from tkinter import *
 from datetime import datetime
 import matplotlib.pyplot as plt
 import numpy as np
-from matplotlib.backends.backend_tkagg import (FigureCanvasTkAgg, NavigationToolbar2Tk)
-import threading
-import time
+from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg
 import os
 import queue
+import Server
+import Checkbar
+import PumpThread
+import Commands
 
-
-class Server(threading.Thread):
-    def __init__(self, queue):
-        super().__init__()
-        self.queue = queue
-
-    def run(self):
-        while True:
-            packet = recvSocket.recvfrom(1024)
-            msg = packet[0]
-            self.queue.put(msg.decode())
 
 def heatIndexCalc(T, RH):
     if T <= 80:
-        return 0.5 * (T + 61.0 + ((T-68.0)*1.2) + (RH*0.094))
+        return 0.5 * (T + 61.0 + ((T - 68.0) * 1.2) + (RH * 0.094))
     else:
-        return -42.379 + 2.04901523*T + 10.14333127*RH - .22475541*T*RH - \
-               .00683783*T*T - .05481717*RH*RH + .00122874*T*T*RH + \
-               .00085282*T*RH*RH - .00000199*T*T*RH*RH
-
-
+        return -42.379 + 2.04901523 * T + 10.14333127 * RH - .22475541 * T * RH - \
+               .00683783 * T * T - .05481717 * RH * RH + .00122874 * T * T * RH + \
+               .00085282 * T * RH * RH - .00000199 * T * T * RH * RH
 
 
 PATH = os.path.dirname(os.path.realpath(__file__))
 dataQueue = queue.Queue()
-lock = threading.Lock()
 MAX_DATA_POINTS = 25
 sendSocket = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
 recvSocket = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
@@ -45,6 +33,7 @@ failedAttempts = 0
 
 dataLines = collections.deque(maxlen=MAX_DATA_POINTS)
 client_Addr = ('192.168.1.247', 6557)
+
 window = Tk()
 window.title("Greenhouse Controller")
 window.resizable(True, True)
@@ -56,6 +45,11 @@ if os.path.exists(PATH + '\\settings.json'):
 else:
     settings['pump1Runtime'] = 30
     settings['pump2Runtime'] = 30
+    settings['DOTW'] = [0, 0, 0, 0, 0, 0, 0]
+    settings['runTimeH'] = '12'
+    settings['runTimeM'] = '00'
+
+pump = PumpThread.pumpThread(sendSocket, settings)
 fig = plt.figure()
 ax = fig.add_subplot(111)
 ax.set_ylim(ymin=0, ymax=100)
@@ -74,12 +68,7 @@ buttons = Frame(window, padx=10, pady=10)
 buttons.grid(row=1, column=0, columnspan=2, padx=20, pady=10, sticky=E + W + N + S)
 
 graph = FigureCanvasTkAgg(fig, master=window)
-#graphFrame = LabelFrame(window, text='Temperature and Humidity', padx=25, pady=25)
-#graphFrame.grid(row=0, column=4, columnspan=4, padx=40, pady=15, sticky=E + W + N + S)
 
-
-def sendPacket(code, time):
-    sendSocket.sendto(f"{code},{time}".encode(), client_Addr)
 
 def processQueue():
     global failedAttempts
@@ -105,33 +94,57 @@ def updateGraph():
     humid_axis = [round(float(line[0])) for line in dataLines]
     line1.set_data(np.arange(len(temp_axis)), temp_axis)
     line2.set_data(np.arange(len(humid_axis)), humid_axis)
-    line3.set_data(np.arange(len(humid_axis)), [heatIndexCalc(temp_axis[x], humid_axis[x]) for x in range(len(temp_axis))])
+    line3.set_data(np.arange(len(humid_axis)),
+                   [heatIndexCalc(temp_axis[x], humid_axis[x]) for x in range(len(temp_axis))])
     graph.draw()
 
-
-def runPump1():
-    pump1StatusLabel.config(text='On', foreground='green')
-    window.update()
-    sendPacket(555, settings['pump1Runtime'])
-
-
-def runPump2():
-    pump2StatusLabel.config(text='On', foreground='green')
-    window.update()
-    sendPacket(560, settings['pump2Runtime'])
 
 
 def updateTime():
     dateTimeLabel.config(text=f"{datetime.now().strftime('%m/%d/%Y, %H:%M:%S')}")
     labels.after(500, updateTime)
 
-def saveSettings(field1, field2, frame):
-    global settings
-    settings['pump1Runtime'] = field1.get()
-    settings['pump2Runtime'] = field2.get()
-    with open(f"{PATH}\\settings.json", 'w') as jFile:
-        json.dump(settings, jFile)
-    frame.destroy()
+
+def pad(value):
+    print(value)
+    print(int(value))
+    if int(value) < 10:
+        return f"0{int(value)}"
+    return value
+
+
+def validateTime(h, m):
+    try:
+        h = int(h)
+    except TypeError or ValueError:
+        return False
+    if not 0 <= h < 24:
+        return False
+    try:
+        m = int(m)
+    except TypeError or ValueError:
+        return False
+    if not 0 <= m < 60:
+        return False
+    return True
+
+
+def saveSettings(field1, field2, field3, field4, field5, frame):
+    global settings, pump, cmds
+    if validateTime(field4.get(), field5.get()):
+        settings['pump1Runtime'] = field1.get()
+        settings['pump2Runtime'] = field2.get()
+        settings['DOTW'] = field3.state()
+        settings['runTimeH'] = pad(field4.get())
+        settings['runTimeM'] = pad(field5.get())
+        with open(f"{PATH}\\settings.json", 'w') as jFile:
+            json.dump(settings, jFile)
+        pump.killThread()
+        pump.join()
+        cmds.updateSettings(settings)
+        pump = PumpThread.pumpThread(sendSocket, settings)
+        pump.start()
+        frame.destroy()
 
 
 def settingsMenu():
@@ -143,36 +156,43 @@ def settingsMenu():
     frame3 = Frame(master=settingsFrame)
     frame4 = Frame(master=settingsFrame)
     frame5 = Frame(master=settingsFrame)
-    frame1.grid(row=0, column=0)
-    frame2.grid(row=0, column=1)
-    frame3.grid(row=1, column=0)
-    frame4.grid(row=1, column=1)
-    frame5.grid(row=2, column=0)
+    frame6 = Frame(master=settingsFrame)
+    frame7 = Frame(master=settingsFrame)
+    frame1.pack(side='top', fill='both', expand=True)
+    frame2.pack(side='top', fill='both', expand=True)
+    frame3.pack(side='top', fill='both', expand=True)
+    frame4.pack(side='top', fill='both', expand=True)
+    frame6.pack(side='top', fill='both', expand=True)
+    frame7.pack(side='top', fill='both', expand=True)
+    frame5.pack(side='top', fill='both', expand=True)
     l1 = Label(master=frame1, text="Pump 1 Runtime")
+    l2 = Label(master=frame3, text="Pump 2 Runtime")
+    l3 = Label(master=frame7, text="Run at time")
+    l4 = Label(master=frame7, text=':')
     p1Run = Entry(master=frame2, justify='center')
     p1Run.insert(0, settings['pump1Runtime'])
-    l2 = Label(master=frame3, text="Pump 2 Runtime")
     p2Run = Entry(master=frame4, justify='center')
     p2Run.insert(0, settings['pump2Runtime'])
-    b1 = Button(master=frame5, text='Save Settings', command=lambda : saveSettings(p1Run, p2Run, settingsFrame))
-    p1Run.pack()
-    p2Run.pack()
-    l1.pack()
-    l2.pack()
-    b1.pack()
+    rt1 = Entry(master=frame7, justify='center')
+    rt1.insert(0, settings['runTimeH'])
+    rt2 = Entry(master=frame7, justify='center')
+    rt2.insert(0, settings['runTimeM'])
+    checkBoxes = Checkbar.Checkbar(frame6, picks=['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'],
+                                   values=settings['DOTW'])
+    b1 = Button(master=frame5, text='Save Settings',
+                command=lambda: saveSettings(p1Run, p2Run, checkBoxes, rt1, rt2, settingsFrame))
 
+    l1.grid(row=0, column=0)
+    l2.grid(row=1, column=0)
+    l3.grid(row=2, column=0)
+    l4.grid(row=2, column=2)
+    p1Run.grid(row=0, column=1)
+    p2Run.grid(row=1, column=1)
+    rt1.grid(row=2, column=1)
+    rt2.grid(row=2, column=3)
+    checkBoxes.grid(row=3, column=0)
+    b1.grid(row=4, column=0)
 
-def runBothPumps():
-    runPump1()
-    time.sleep(5)
-    pump1StatusLabel.config(text='Off', foreground='red')
-    window.update()
-
-    runPump2()
-    time.sleep(5)
-    pump2StatusLabel.config(text='Off', foreground='red')
-
-    lastRunTimeLabel.config(text=f"{datetime.now().strftime('%m/%d/%Y, %H:%M:%S')}", foreground='green')
 
 
 dateTimeLabel = Label(master=labels, text=f"{datetime.now().strftime('%m/%d/%Y, %H:%M:%S')}", foreground="black")
@@ -184,13 +204,14 @@ pump1Label = Label(master=labels, text="Pump 1 Status ", foreground="black")
 pump2Label = Label(master=labels, text="Pump 2 Status ", foreground="black")
 pump1StatusLabel = Label(master=labels, text="Off", foreground="red")
 pump2StatusLabel = Label(master=labels, text="Off", foreground="red")
-runButton = Button(master=buttons, text="Run Pumps", fg="red", command=lambda: runBothPumps())
+cmds = Commands.Commands(pump1StatusLabel, pump2StatusLabel, window, client_Addr, settings, sendSocket)
+runButton = Button(master=buttons, text="Run Pumps", fg="red", command=lambda: cmds.runBothPumps())
 scheduleButton = Button(master=buttons, text='Edit Schedule', fg='red', command=lambda: settingsMenu())
 graph.draw()
 
 graph.get_tk_widget().grid(row=0, column=4)
 
-#toolbar = NavigationToolbar2Tk(graph, window)
+# toolbar = NavigationToolbar2Tk(graph, window)
 
 window.columnconfigure(0, weight=1)
 window.rowconfigure(1, weight=1)
@@ -198,8 +219,8 @@ window.rowconfigure(1, weight=1)
 labels.columnconfigure(0, weight=1)
 labels.rowconfigure(1, weight=1)
 
-#graphFrame.columnconfigure(1, weight=2)
-#graphFrame.rowconfigure(0, weight=2)
+# graphFrame.columnconfigure(1, weight=2)
+# graphFrame.rowconfigure(0, weight=2)
 
 dateTimeLabel.pack()
 lastRunLabel.pack()
@@ -214,6 +235,8 @@ runButton.pack()
 scheduleButton.pack()
 
 updateTime()
-Server(dataQueue).start()
+pump.start()
+serv = Server.Server(dataQueue, recvSocket)
+serv.start()
 window.after(100, processQueue)
 window.mainloop()
