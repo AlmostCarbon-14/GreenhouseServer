@@ -49,7 +49,6 @@ else:
     settings['runTimeH'] = '12'
     settings['runTimeM'] = '00'
 
-pump = PumpThread.pumpThread(sendSocket, settings)
 fig = plt.figure()
 ax = fig.add_subplot(111)
 ax.set_ylim(ymin=0, ymax=100)
@@ -106,8 +105,6 @@ def updateTime():
 
 
 def pad(value):
-    print(value)
-    print(int(value))
     if int(value) < 10:
         return f"0{int(value)}"
     return value
@@ -142,7 +139,7 @@ def saveSettings(field1, field2, field3, field4, field5, frame):
         pump.killThread()
         pump.join()
         cmds.updateSettings(settings)
-        pump = PumpThread.pumpThread(sendSocket, settings)
+        pump = PumpThread.pumpThread(sendSocket=sendSocket, settings=settings, cmds=cmds)
         pump.start()
         frame.destroy()
 
@@ -204,7 +201,7 @@ pump1Label = Label(master=labels, text="Pump 1 Status ", foreground="black")
 pump2Label = Label(master=labels, text="Pump 2 Status ", foreground="black")
 pump1StatusLabel = Label(master=labels, text="Off", foreground="red")
 pump2StatusLabel = Label(master=labels, text="Off", foreground="red")
-cmds = Commands.Commands(pump1StatusLabel, pump2StatusLabel, window, client_Addr, settings, sendSocket)
+cmds = Commands.Commands(pump1StatusLabel, pump2StatusLabel, lastRunTimeLabel, window, client_Addr, settings, sendSocket)
 runButton = Button(master=buttons, text="Run Pumps", fg="red", command=lambda: cmds.runBothPumps())
 scheduleButton = Button(master=buttons, text='Edit Schedule', fg='red', command=lambda: settingsMenu())
 graph.draw()
@@ -235,6 +232,7 @@ runButton.pack()
 scheduleButton.pack()
 
 updateTime()
+pump = PumpThread.pumpThread(sendSocket, settings, cmds)
 pump.start()
 serv = Server.Server(dataQueue, recvSocket)
 serv.start()

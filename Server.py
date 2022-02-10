@@ -1,12 +1,11 @@
 import threading
-import Commands
+
 
 class Server(threading.Thread):
-    def __init__(self, queue, recvSocket, cmds):
+    def __init__(self, queue, recvSocket):
         super().__init__()
         self.queue = queue
         self.recvSocket = recvSocket
-        self.commands = cmds
 
     def run(self):
         while True:
