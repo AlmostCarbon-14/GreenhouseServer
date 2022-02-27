@@ -1,6 +1,5 @@
 #!/usr/env/python3
 
-import RPi.GPIO as GPIO
 import collections
 import json
 import socket
@@ -74,10 +73,6 @@ buttons.grid(row=1, column=0, columnspan=2, padx=20, pady=10, sticky=E + W + N +
 
 graph = FigureCanvasTkAgg(fig, master=window)
 
-
-def shutdownCheck():
-    if GPIO.input(10) == GPIO.HIGH:
-        os.system("sudo shutdown -h now")
 
 def processQueue():
     global failedAttempts
@@ -247,6 +242,5 @@ pump.start()
 serv = Server.Server(dataQueue, recvSocket)
 serv.start()
 window.after(100, processQueue)
-window.after(50, shutdownCheck())
 window.attributes('-fullscreen', True)
 window.mainloop()
