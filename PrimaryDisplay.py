@@ -1,5 +1,6 @@
 #!/usr/env/python3
 
+import RPi.GPIO as GPIO
 import collections
 import json
 import socket
@@ -32,6 +33,9 @@ sendSocket = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
 recvSocket = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
 recvSocket.bind(("0.0.0.0", 6556))
 failedAttempts = 0
+GPIO.setwarnings(False)
+GPIO.setmode(GPIO.BOARD)
+GPIO.setup(10, GPIO.IN, pull_up_down=GPIO.PUD_DOWN)
 
 dataLines = collections.deque(maxlen=MAX_DATA_POINTS)
 client_Addr = ('192.168.1.247', 6557)
@@ -70,6 +74,11 @@ buttons.grid(row=1, column=0, columnspan=2, padx=20, pady=10, sticky=E + W + N +
 
 graph = FigureCanvasTkAgg(fig, master=window)
 
+
+def shutdownCheck():
+    while True:
+        if GPIO.input(10) == GPIO.HIGH:
+            os.system("sudo shutdown -h now")
 
 def processQueue():
     global failedAttempts
@@ -239,5 +248,6 @@ pump.start()
 serv = Server.Server(dataQueue, recvSocket)
 serv.start()
 window.after(100, processQueue)
+window.after(100, shutdownCheck())
 window.attributes('-fullscreen', True)
 window.mainloop()
