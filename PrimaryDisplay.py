@@ -76,9 +76,8 @@ graph = FigureCanvasTkAgg(fig, master=window)
 
 
 def shutdownCheck():
-    while True:
-        if GPIO.input(10) == GPIO.HIGH:
-            os.system("sudo shutdown -h now")
+    if GPIO.input(10) == GPIO.HIGH:
+        os.system("sudo shutdown -h now")
 
 def processQueue():
     global failedAttempts
@@ -248,6 +247,6 @@ pump.start()
 serv = Server.Server(dataQueue, recvSocket)
 serv.start()
 window.after(100, processQueue)
-window.after(100, shutdownCheck())
+window.after(50, shutdownCheck())
 window.attributes('-fullscreen', True)
 window.mainloop()
