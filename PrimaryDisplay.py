@@ -32,9 +32,6 @@ sendSocket = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
 recvSocket = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
 recvSocket.bind(("0.0.0.0", 6556))
 failedAttempts = 0
-GPIO.setwarnings(False)
-GPIO.setmode(GPIO.BOARD)
-GPIO.setup(10, GPIO.IN, pull_up_down=GPIO.PUD_DOWN)
 
 dataLines = collections.deque(maxlen=MAX_DATA_POINTS)
 client_Addr = ('192.168.1.247', 6557)
